@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Courbes groupés</title>
+
+    <style>
+      body {
+        background: #0d1117;
+        color: white;
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .tokkens {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        width: 30%;
+      }
+
+      .ivoire,
+      .armoirie,
+      .ssv,
+      .ssc {
+        padding: 7px 15px;
+        border: 2px solid #3ea7ed;
+        border-radius: 20px;
+        color: #3ea7ed;
+        font-size: 13px;
+        cursor: pointer;
+      }
+
+      .ivoire:hover,
+      .armoirie:hover,
+      .ssv:hover,
+      .ssc:hover {
+        color: white;
+        background: #3ea7ed;
+      }
+
+      a {
+        background: #3ea7ed;
+        color: white;
+        padding: 10px;
+        border-radius: 20px;
+        text-decoration: none;
+      }
+
+      a:hover {
+        background: #2a8bbd;
+      }
+
+      .active {
+        background: #3ea7ed;
+        color: white;
+      }
+
+      canvas {
+        background: #161b22;
+        border-radius: 10px;
+        border: 1px solid #444;
+      }
+      #tooltip {
+        position: absolute;
+        padding: 6px 12px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #3ea7ed;
+        border-radius: 4px;
+        font-size: 14px;
+        pointer-events: none;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tokkens">
+      <div class="ivoire">Ivoire</div>
+      <div class="armoirie">Armoirie</div>
+      <div class="ssv">SSV</div>
+      <div class="ssc">SSC</div>
+    </div>
+    <canvas id="tradingChart" width="800" height="400"></canvas>
+    <div id="tooltip"></div>
+
+    <a href="index.html">Courbe individuelle</a>
+    <script>
+      const canvas = document.getElementById("tradingChart");
+      const ctx = canvas.getContext("2d");
+      const tooltip = document.getElementById("tooltip");
+
+      const tokens = ["ivoire", "armoirie", "ssv", "ssc"];
+      const colors = {
+        ivoire: "#3ea6ed",
+        armoirie: "#f39c12",
+        ssv: "#27ae60",
+        ssc: "#e74c3c",
+      };
+
+      let dataMap = {};
+
+      const maxPoints = 50;
+      const margin = 50;
+      const width = canvas.width;
+      const height = canvas.height;
+
+      let dynamicScale = 1;
+      let yStart = 0;
+      let mouseY = null;
+
+      function drawChart(mouseX = null) {
+        ctx.clearRect(0, 0, width, height);
+
+        let allData = Object.values(dataMap).flat();
+        if (allData.length === 0) return;
+
+        const maxData = Math.max(...allData);
+        yStart = 0;
+        const yEnd = Math.ceil((maxData + 1) / 5) * 5;
+        dynamicScale = ((height - margin * 2) / (yEnd - yStart)) * 1;
+        const stepX = (width - margin * 2) / (maxPoints - 1);
+
+        tooltip.style.display = "none";
+
+        // 📌 Lignes horizontales de l'axe des Y
+        ctx.strokeStyle = "#44444444";
+        ctx.lineWidth = 1;
+        ctx.font = "12px sans-serif";
+        ctx.fillStyle = "#ccc";
+
+        const yStep = Math.ceil((yEnd - yStart) / 5);
+        for (let yVal = yStart; yVal <= yEnd; yVal += yStep) {
+          const y = height - margin - (yVal - yStart) * dynamicScale;
+          ctx.beginPath();
+          ctx.moveTo(margin, y);
+          ctx.lineTo(width - margin, y);
+          ctx.stroke();
+          //ctx.fillText(yVal.toFixed(2), 5, y + 4);
+        }
+
+        // 📈 Tracer chaque courbe
+        for (let token in dataMap) {
+          const data = dataMap[token];
+          if (!data) continue;
+
+          ctx.beginPath();
+          for (let i = 0; i < data.length; i++) {
+            const x = margin + i * stepX;
+            const y = height - margin - (data[i] - yStart) * dynamicScale;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = colors[token];
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          // 🟢 Tooltip
+          if (mouseX !== null) {
+            const index = Math.round((mouseX - margin) / stepX);
+            if (index >= 0 && index < maxPoints) {
+              let closestToken = null;
+              let closestY = null;
+              let minDistance = Infinity;
+
+              // Trouver la courbe dont le point est le plus proche de la souris (Y)
+              for (let token in dataMap) {
+                const data = dataMap[token];
+                if (!data || index >= data.length) continue;
+
+                const y =
+                  height - margin - (data[index] - yStart) * dynamicScale;
+                const distance = Math.abs(y - (mouseY ?? 0));
+
+                if (distance < minDistance) {
+                  minDistance = distance;
+                  closestToken = token;
+                  closestY = y;
+                }
+              }
+
+              // Affichage du tooltip pour la courbe la plus proche
+              if (closestToken) {
+                const x = margin + index * stepX;
+                const valeur = dataMap[closestToken][index];
+
+                // Cercle visuel
+                ctx.beginPath();
+                ctx.arc(x, closestY, 4, 0, Math.PI * 2);
+                ctx.fillStyle = colors[closestToken];
+                ctx.fill();
+
+                // Tooltip
+                tooltip.style.display = "block";
+                tooltip.style.left = `${x + canvas.offsetLeft + 10}px`;
+                tooltip.style.top = `${closestY + canvas.offsetTop - 30}px`;
+                tooltip.style.color = colors[closestToken];
+                tooltip.innerHTML = `${closestToken.toUpperCase()} : ${valeur.toFixed(
+                  4
+                )} €`;
+              }
+            }
+          }
+        }
+      }
+
+      async function chargerCourbe(token) {
+        const res = await fetch(`/valeur-actuelle?token=${token}`);
+        const json = await res.json();
+        dataMap[token] = json.historique;
+        drawChart();
+      }
+
+      document.querySelectorAll(".tokkens div").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const token = btn.classList[0];
+          if (dataMap[token]) {
+            delete dataMap[token];
+            btn.classList.remove("active");
+          } else {
+            chargerCourbe(token);
+            btn.classList.add("active");
+          }
+        });
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        mouseY = e.clientY - rect.top;
+        drawChart(mouseX);
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        drawChart();
+      });
+
+      // ⏱️ Mise à jour automatique toutes les minutes à xx:59
+      let polling = false;
+
+      async function surveillerChangement() {
+        polling = true;
+        const timeout = Date.now() + 7000;
+        while (Date.now() < timeout) {
+          for (let token in dataMap) {
+            await chargerCourbe(token);
+          }
+          break;
+        }
+        polling = false;
+      }
+
+      setInterval(() => {
+        const now = new Date();
+        if (now.getSeconds() === 59 && !polling) {
+          surveillerChangement();
+        }
+      }, 1000);
+
+      drawChart();
+    </script>
+  </body>
+</html>

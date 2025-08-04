@@ -1,0 +1,16 @@
+# Ne pas versionner les dépendances
+node_modules/
+
+# Ne pas versionner les fichiers de base de données
+*.db
+*.sqbpro
+
+# Ne pas versionner les fichiers sensibles
+credentials.json
+
+# Ne pas versionner les fichiers de logs éventuels
+*.log
+
+# Ignorer les fichiers système
+.DS_Store
+Thumbs.db

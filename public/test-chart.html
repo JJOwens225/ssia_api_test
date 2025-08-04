@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Advanced Trading Chart</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+      .tool-btn.active {
+        background-color: #3b82f6;
+        color: white;
+      }
+      .chart-container {
+        height: 70vh;
+      }
+      @media (max-width: 768px) {
+        .chart-container {
+          height: 60vh;
+        }
+        .tools-panel {
+          flex-wrap: wrap;
+        }
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-6">
+      <header class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">Advanced Trading Chart</h1>
+        <p class="text-gray-600">Lightweight Charts with Trading Tools</p>
+      </header>
+
+      <div class="bg-white rounded-lg shadow-lg p-4 mb-6">
+        <div class="flex flex-col md:flex-row gap-4 mb-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1"
+              >Symbol</label
+            >
+            <select
+              id="symbol-select"
+              class="w-full p-2 border border-gray-300 rounded-md"
+            >
+              <option value="ivoire">Ivoire</option>
+              <option value="armoirie">Armoirie</option>
+              <option value="ssc">SSC</option>
+              <option value="ssv">SSV</option>
+            </select>
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1"
+              >Interval</label
+            >
+            <select
+              id="interval-select"
+              class="w-full p-2 border border-gray-300 rounded-md"
+            >
+              <option value="1m">1 minute</option>
+              <option value="5m">5 minutes</option>
+              <option value="15m">15 minutes</option>
+              <option value="1h">1 hour</option>
+              <option value="4h">4 hours</option>
+              <option value="1d" selected>1 day</option>
+            </select>
+          </div>
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-1"
+              >Chart Type</label
+            >
+            <select
+              id="chart-type"
+              class="w-full p-2 border border-gray-300 rounded-md"
+            >
+              <option value="candlestick">Candlestick</option>
+              <option value="line">Line</option>
+              <option value="area">Area</option>
+              <option value="bar">Bar</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="tools-panel flex gap-2 mb-4 overflow-x-auto py-2">
+          <button
+            id="cursor-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100 active"
+          >
+            Cursor
+          </button>
+          <button
+            id="line-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Line
+          </button>
+          <button
+            id="ray-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Ray
+          </button>
+          <button
+            id="segment-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Segment
+          </button>
+          <button
+            id="horizontal-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Horizontal
+          </button>
+          <button
+            id="vertical-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Vertical
+          </button>
+          <button
+            id="crosshair-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Crosshair
+          </button>
+          <button
+            id="measure-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Measure
+          </button>
+          <button
+            id="fibonacci-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100"
+          >
+            Fibonacci
+          </button>
+          <button
+            id="clear-btn"
+            class="tool-btn px-3 py-1 border border-gray-300 rounded-md hover:bg-gray-100 bg-red-100 text-red-600"
+          >
+            Clear All
+          </button>
+        </div>
+
+        <div class="chart-container relative" id="chart-container">
+          <div id="chart" class="w-full h-full"></div>
+          <div
+            id="loading"
+            class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80 hidden"
+          >
+            <div
+              class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"
+            ></div>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-4">
+          <div class="flex-1 min-w-[200px]">
+            <h3 class="font-medium text-gray-700 mb-2">Price Info</h3>
+            <div class="bg-gray-50 p-3 rounded-md">
+              <div class="flex justify-between mb-1">
+                <span class="text-gray-600">Open:</span>
+                <span id="open-price" class="font-medium">-</span>
+              </div>
+              <div class="flex justify-between mb-1">
+                <span class="text-gray-600">High:</span>
+                <span id="high-price" class="font-medium">-</span>
+              </div>
+              <div class="flex justify-between mb-1">
+                <span class="text-gray-600">Low:</span>
+                <span id="low-price" class="font-medium">-</span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-gray-600">Close:</span>
+                <span id="close-price" class="font-medium">-</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 min-w-[200px]">
+            <h3 class="font-medium text-gray-700 mb-2">Volume</h3>
+            <div class="bg-gray-50 p-3 rounded-md">
+              <div class="flex justify-between">
+                <span class="text-gray-600">Volume (24h):</span>
+                <span id="volume" class="font-medium">-</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex-1 min-w-[200px]">
+            <h3 class="font-medium text-gray-700 mb-2">Time Scale</h3>
+            <div class="flex gap-2">
+              <button
+                id="zoom-in"
+                class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                +
+              </button>
+              <button
+                id="zoom-out"
+                class="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                -
+              </button>
+              <button
+                id="reset-zoom"
+                class="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        let candleSeries, volumeSeries;
+        let currentData = []; // Pour stocker les données actuelles
+        // Initialize chart
+        const chartContainer = document.getElementById("chart");
+        const chart = LightweightCharts.createChart(chartContainer, {
+          layout: {
+            backgroundColor: "#ffffff",
+            textColor: "#333",
+          },
+          grid: {
+            vertLines: {
+              color: "rgba(197, 203, 206, 0.3)",
+            },
+            horzLines: {
+              color: "rgba(197, 203, 206, 0.3)",
+            },
+          },
+          crosshair: {
+            mode: LightweightCharts.CrosshairMode.Normal,
+          },
+          rightPriceScale: {
+            borderVisible: false,
+          },
+          timeScale: {
+            borderVisible: false,
+            timeVisible: true,
+            secondsVisible: false,
+          },
+          handleScroll: {
+            mouseWheel: true,
+            pressedMouseMove: true,
+          },
+          handleScale: {
+            axisPressedMouseMove: true,
+            mouseWheel: true,
+            pinch: true,
+          },
+        });
+
+        // Initialiser les séries
+        candleSeries = chart.addCandlestickSeries({
+          upColor: "#26a69a",
+          downColor: "#ef5350",
+          borderVisible: false,
+          wickUpColor: "#26a69a",
+          wickDownColor: "#ef5350",
+        });
+
+        volumeSeries = chart.addHistogramSeries({
+          color: "#26a69a",
+          priceFormat: { type: "volume" },
+          priceScaleId: "",
+          scaleMargins: {
+            top: 0.8,
+            bottom: 0,
+          },
+        });
+
+        // Sample data (in a real app, you would fetch this from an API)
+
+        async function fetchChartData(token = "ivoire", timeframe = "1h") {
+          document.getElementById("loading").classList.remove("hidden");
+
+          try {
+            const response = await fetch(
+              `/bougies?token=${token}&timeframe=${timeframe}`
+            );
+            const data = await response.json();
+
+            // Formater les données
+            currentData = data.map((item) => ({
+              time: Math.floor(Number(item.time)),
+              open: Number(item.open),
+              high: Number(item.high),
+              low: Number(item.low),
+              close: Number(item.close),
+              volume: Math.floor(Math.random() * 1000) + 500,
+            }));
+
+            const volumeData = currentData.map((d) => ({
+              time: d.time,
+              value: d.volume,
+              color: d.close > d.open ? "#26a69a70" : "#ef535070",
+            }));
+
+            // Mise à jour des données
+            candleSeries.setData(currentData);
+            volumeSeries.setData(volumeData);
+
+            // Mise à jour des informations de prix
+            if (currentData.length > 0) {
+              updatePriceInfo({
+                time: currentData[currentData.length - 1].time,
+              });
+            }
+
+            chart.timeScale().fitContent();
+          } catch (error) {
+            console.error("Erreur lors du chargement des données:", error);
+          } finally {
+            document.getElementById("loading").classList.add("hidden");
+          }
+        }
+
+        // Modifier la fonction updatePriceInfo pour utiliser currentData
+        function updatePriceInfo(param) {
+          if (!param || !param.time) return;
+
+          const lastCandle = currentData.find((c) => c.time === param.time);
+          if (lastCandle) {
+            document.getElementById("open-price").textContent =
+              lastCandle.open.toFixed(2);
+            document.getElementById("high-price").textContent =
+              lastCandle.high.toFixed(2);
+            document.getElementById("low-price").textContent =
+              lastCandle.low.toFixed(2);
+            document.getElementById("close-price").textContent =
+              lastCandle.close.toFixed(2);
+
+            const volume24h = currentData
+              .slice(-96)
+              .reduce((sum, c) => sum + c.volume, 0);
+            document.getElementById("volume").textContent =
+              volume24h.toLocaleString();
+          }
+        }
+
+        // Subscribe to crosshair move to show price info
+        chart.subscribeCrosshairMove((param) => {
+          if (param.time) {
+            updatePriceInfo(param);
+          } else {
+            // Show last candle data when crosshair is not on a candle
+            if (currentData.length > 0) {
+              updatePriceInfo({
+                time: currentData[currentData.length - 1].time,
+              });
+            }
+          }
+        });
+
+        // Tool buttons functionality
+        let activeTool = "cursor";
+        const tools = {
+          cursor: null,
+          line: null,
+          ray: null,
+          segment: null,
+          horizontal: null,
+          vertical: null,
+          crosshair: null,
+          measure: null,
+          fibonacci: null,
+        };
+
+        function setActiveTool(tool) {
+          activeTool = tool;
+
+          // Update UI
+          document.querySelectorAll(".tool-btn").forEach((btn) => {
+            btn.classList.remove("active");
+          });
+          document.getElementById(`${tool}-btn`).classList.add("active");
+
+          // Set crosshair mode
+          if (tool === "crosshair") {
+            chart.applyOptions({
+              crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            });
+          } else {
+            chart.applyOptions({
+              crosshair: { mode: LightweightCharts.CrosshairMode.Hidden },
+            });
+          }
+
+          // Clear previous tool if exists
+          if (tools[activeTool]) {
+            chart.removePosition(tools[activeTool]);
+            tools[activeTool] = null;
+          }
+        }
+
+        // Initialize tools
+        document.querySelectorAll(".tool-btn").forEach((btn) => {
+          btn.addEventListener("click", function () {
+            const tool = this.id.replace("-btn", "");
+            setActiveTool(tool);
+          });
+        });
+
+        // Chart click handler for drawing tools
+        chart.subscribeClick((param) => {
+          if (
+            !param.point ||
+            activeTool === "cursor" ||
+            activeTool === "crosshair"
+          )
+            return;
+
+          const price = param.seriesPrices.get(candleSeries);
+          if (!price) return;
+
+          if (!tools[activeTool]) {
+            // Create new drawing tool
+            switch (activeTool) {
+              case "line":
+                tools.line = chart.addLineSeries({
+                  color: "#2962FF",
+                  lineWidth: 2,
+                });
+                tools.line.setData([{ time: param.time, value: price }]);
+                break;
+              case "ray":
+                tools.ray = chart.addLineSeries({
+                  color: "#FF6D00",
+                  lineWidth: 2,
+                  lineType: LightweightCharts.LineType.Ray,
+                });
+                tools.ray.setData([{ time: param.time, value: price }]);
+                break;
+              case "segment":
+                tools.segment = chart.addLineSeries({
+                  color: "#00BFA5",
+                  lineWidth: 2,
+                  lineType: LightweightCharts.LineType.WithArrows,
+                });
+                tools.segment.setData([{ time: param.time, value: price }]);
+                break;
+              case "horizontal":
+                tools.horizontal = chart.addLineSeries({
+                  color: "#787B86",
+                  lineWidth: 1,
+                  lineType: LightweightCharts.LineType.Horizontal,
+                });
+                tools.horizontal.setData([{ time: param.time, value: price }]);
+                break;
+              case "vertical":
+                tools.vertical = chart.addLineSeries({
+                  color: "#787B86",
+                  lineWidth: 1,
+                  lineType: LightweightCharts.LineType.Vertical,
+                });
+                tools.vertical.setData([{ time: param.time, value: price }]);
+                break;
+            }
+          } else {
+            // Update existing tool
+            const data = tools[activeTool].dataByIndex(0);
+            if (data) {
+              tools[activeTool].update({ time: param.time, value: price });
+            } else {
+              tools[activeTool].setData([{ time: param.time, value: price }]);
+            }
+          }
+        });
+
+        // Clear all drawings
+        document
+          .getElementById("clear-btn")
+          .addEventListener("click", function () {
+            Object.values(tools).forEach((tool) => {
+              if (tool) {
+                chart.removePosition(tool);
+              }
+            });
+
+            // Reset tools object
+            Object.keys(tools).forEach((key) => {
+              tools[key] = null;
+            });
+
+            setActiveTool("cursor");
+          });
+
+        // Zoom controls
+        document
+          .getElementById("zoom-in")
+          .addEventListener("click", function () {
+            chart.timeScale().applyOptions({
+              barSpacing: chart.timeScale().options().barSpacing * 0.9,
+            });
+          });
+
+        document
+          .getElementById("zoom-out")
+          .addEventListener("click", function () {
+            chart.timeScale().applyOptions({
+              barSpacing: chart.timeScale().options().barSpacing * 1.1,
+            });
+          });
+
+        document
+          .getElementById("reset-zoom")
+          .addEventListener("click", function () {
+            chart.timeScale().applyOptions({
+              barSpacing: 6,
+            });
+          });
+
+        // Chart type switcher
+        document
+          .getElementById("chart-type")
+          .addEventListener("change", function () {
+            const type = this.value;
+
+            // Remove existing series
+            chart.removeSeries(candleSeries);
+            chart.removeSeries(volumeSeries);
+
+            // Create new series based on type
+            let newSeries;
+            switch (type) {
+              case "candlestick":
+                newSeries = chart.addCandlestickSeries({
+                  upColor: "#26a69a",
+                  downColor: "#ef5350",
+                  borderVisible: false,
+                  wickUpColor: "#26a69a",
+                  wickDownColor: "#ef5350",
+                });
+                newSeries.setData(currentData);
+                break;
+              case "line":
+                newSeries = chart.addLineSeries({
+                  color: "#2962FF",
+                  lineWidth: 2,
+                });
+                newSeries.setData(
+                  currentData.map((d) => ({
+                    time: d.time,
+                    value: d.close,
+                  }))
+                );
+                break;
+              case "area":
+                newSeries = chart.addAreaSeries({
+                  topColor: "rgba(41, 98, 255, 0.4)",
+                  bottomColor: "rgba(41, 98, 255, 0.1)",
+                  lineColor: "#2962FF",
+                  lineWidth: 2,
+                });
+                newSeries.setData(
+                  currentData.map((d) => ({
+                    time: d.time,
+                    value: d.close,
+                  }))
+                );
+                break;
+              case "bar":
+                newSeries = chart.addBarSeries({
+                  upColor: "#26a69a",
+                  downColor: "#ef5350",
+                });
+                newSeries.setData(currentData);
+                break;
+            }
+
+            // Set data
+            if (type === "candlestick" || type === "bar") {
+              newSeries.setData(candleData);
+            } else {
+              const lineData = candleData.map((d) => ({
+                time: d.time,
+                value: d.close,
+              }));
+              newSeries.setData(lineData);
+            }
+
+            // Re-add volume series
+            const newVolumeSeries = chart.addHistogramSeries({
+              color: "#26a69a",
+              priceFormat: { type: "volume" },
+              priceScaleId: "",
+              scaleMargins: {
+                top: 0.8,
+                bottom: 0,
+              },
+            });
+            const volumeData = currentData.map((d) => ({
+              time: d.time,
+              value: d.volume,
+              color: d.close > d.open ? "#26a69a70" : "#ef535070",
+            }));
+            newVolumeSeries.setData(volumeData);
+
+            // Update references
+            candleSeries = newSeries;
+            volumeSeries = newVolumeSeries;
+          });
+
+        // Symbol switcher (mock)
+        document
+          .getElementById("symbol-select")
+          .addEventListener("change", function () {
+            const token = this.value.toLowerCase();
+            const timeframe = document.getElementById("interval-select").value;
+            fetchChartData(token, timeframe);
+          });
+        // Interval switcher (mock)
+        document
+          .getElementById("interval-select")
+          .addEventListener("change", function () {
+            const token = document
+              .getElementById("symbol-select")
+              .value.toLowerCase();
+            const timeframe = this.value;
+            fetchChartData(token, timeframe);
+          });
+
+        // Chargement initial
+        fetchChartData();
+
+        // Initial price info
+        if (currentData.length > 0) {
+          updatePriceInfo({ time: currentData[currentData.length - 1].time });
+        }
+      });
+    </script>
+  </body>
+</html>

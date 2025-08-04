@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Valeur Actuelle</title>
+
+    <style>
+      body {
+        background: white;
+        color: black;
+        font-family: sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        display: flex;
+        flex-direction: column;
+      }
+
+      span {
+        border: red solid 2px;
+      }
+
+      #miniChart {
+        background: radial-gradient(circle at center, #010418 0%, #000000 100%);
+        border-top: rgba(163, 163, 163, 0.5) 2px dotted;
+      }
+
+      a {
+        background: #3ea7ed;
+        color: white;
+        padding: 10px;
+        border-radius: 20px;
+        text-decoration: none;
+      }
+
+      a:hover {
+        background: #2a8bbd;
+      }
+
+      canvas {
+        /*background: radial-gradient(circle at center, #010418 0%, #000000 100%);*/
+        background: #e4efff;
+      }
+      #tooltip {
+        position: absolute;
+        padding: 6px 12px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #3ea7ed;
+        border-radius: 4px;
+        font-size: 14px;
+        pointer-events: none;
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="chartjs.html">Courbe/Bougie</a>
+    <canvas id="tradingChart" width="1200" height="500"></canvas>
+    <canvas id="miniChart" width="1200" height="50"></canvas>
+
+    <div id="tooltip"></div>
+    <div style="margin: 10px">
+      <button id="toggleDraw" style="padding: 8px">
+        ✏️ Mode dessin de segments: OFF
+      </button>
+      <button id="clearSegments" style="padding: 8px">
+        🧹 Effacer tous les segments
+      </button>
+    </div>
+    <div>
+      <button onclick="zoomIn()">➕ Zoom +</button>
+      <button onclick="zoomOut()">➖ Zoom -</button>
+      <button onclick="resetZoom()">🔄 Réinitialiser</button>
+      <span id="zoomLevelDisplay">Zoom: 1.0x</span>
+    </div>
+
+    <div>
+      <button id="leftButton">◀️ Gauche</button>
+      <button id="rightButton">▶️ Droite</button>
+    </div>
+
+    <!-- <div class="valeur_actuelle">Chargement...</div> 
+    <a href="groupe.html">Courbes groupées</a>-->
+
+    <script>
+      let lastValue = null;
+      let polling = false;
+
+      let prixActionIvoire = null;
+
+      const canvas = document.getElementById("tradingChart");
+      const ctx = canvas.getContext("2d");
+      const tooltip = document.getElementById("tooltip");
+
+      const width = canvas.width;
+      const height = canvas.height;
+      const margin = 50;
+
+      let data = [];
+      let timeLabels = [];
+      let previousData = [];
+
+      let maxPoints = 0;
+
+      let animationProgress = 1; // de 0 à 1
+      let animationStartTime = 0;
+      let animatingCurve = false;
+
+      let targetYOffset = 0;
+      let yOffsetStart = 0;
+      let yOffsetStartTime = 0;
+      let yOffsetAnimating = false;
+
+      let yZoomLevel = 1;
+      let yOffset = 0; // Décalage vertical manuel
+      const minYZoom = 1;
+      const maxYZoom = 5;
+      let yCenterValue = null; // Valeur Y autour de laquelle zoomer
+
+      let startIndex = 0;
+      let zoomLevel = 1; // 1 = zoom normal
+      const minZoom = 1;
+      const maxZoom = 15;
+
+      let autoScroll = true;
+
+      let lastTouchDistance = null;
+      let touchStartX = 0;
+      let touchStartY = 0;
+      let isTouchDragging = false;
+      let touchStartIndex = 0;
+      let touchStartYOffset = 0;
+
+      let isDragging = false;
+      let dragStartX = 0;
+
+      function interpolate(value1, value2, t) {
+        return value1 + (value2 - value1) * t;
+      }
+
+      async function chargerPrixAction() {
+        try {
+          const res = await fetch("/prix-action");
+          const data = await res.json();
+          prixActionIvoire = data.prixAction;
+        } catch (err) {
+          console.error("Erreur prix action:", err);
+        }
+      }
+
+      function drawChart(mouseX = null, mouseY = null) {
+        maxPoints = Math.floor(data.length / zoomLevel);
+        startIndex = Math.min(Math.max(0, startIndex), data.length - maxPoints);
+
+        ctx.clearRect(0, 0, width, height);
+
+        if (data.length === 0) return;
+
+        const scaleX = 1;
+        const stepX = ((width - margin * 2) / (maxPoints - 1)) * scaleX;
+        const endIndex = Math.min(startIndex + maxPoints, data.length);
+        const visibleData = data.slice(startIndex, endIndex);
+        const visiblePreviousData = previousData.slice(startIndex, endIndex);
+
+        let minData = Math.min(...visibleData);
+        let maxData = Math.max(...visibleData);
+
+        const lastValue = data[data.length - 1];
+        const previousValue = data[data.length - 2] || lastValue;
+        const isRising = lastValue > previousValue;
+        const curveColor = isRising ? "#00c853" : "#d50000";
+        const visibleYCount = 28;
+        const halfRange = Math.floor(visibleYCount / 2);
+
+        const yCenter = lastValue + yOffset;
+        const yStart = yCenter - halfRange;
+        const yEnd = yCenter + halfRange;
+        const dynamicScale =
+          ((height - margin * 2) / (yEnd - yStart)) * yZoomLevel;
+
+        // Calcul des Y pour l'axe gauche (basé sur les données)
+        const firstGridY = Math.ceil(yStart);
+        const lastGridY = Math.floor(yEnd);
+
+        // Graduation GAUCHE (existante)
+        ctx.strokeStyle = "#44444400";
+        ctx.textAlign = "right";
+        for (let yValue = firstGridY; yValue <= lastGridY; yValue++) {
+          const y = height - margin - (yValue - yStart) * dynamicScale;
+          ctx.beginPath();
+          ctx.moveTo(margin, y);
+          ctx.lineTo(width - margin, y);
+          ctx.stroke();
+          ctx.fillText(yValue.toFixed(0), margin - 10, y + 4);
+        }
+
+        // Graduation DROITE (basée sur le prix d'action si disponible)
+        if (prixActionIvoire !== null) {
+          ctx.strokeStyle = "#44444400";
+          ctx.textAlign = "left";
+
+          // Calcul des valeurs pour l'axe droit
+          const actionRange = 16; // ±5 autour du prix d'action
+          const actionMin = Math.floor(prixActionIvoire - actionRange);
+          const actionMax = Math.ceil(prixActionIvoire + actionRange);
+          const step = (actionMax - actionMin) / 16; // 5 graduations
+
+          for (let yValue = actionMin; yValue <= actionMax; yValue += step) {
+            const y = height - margin - (yValue - yStart) * dynamicScale;
+
+            // Ne dessiner que si dans la plage visible
+            if (y >= margin && y <= height - margin) {
+              ctx.beginPath();
+              ctx.moveTo(width - margin, y);
+              ctx.lineTo(width - margin - 10, y);
+              ctx.stroke();
+
+              // Formatage différent pour l'axe droit
+              ctx.fillText(
+                yValue.toFixed(2), // 2 décimales pour plus de précision
+                width - margin + 15,
+                y + 4
+              );
+            }
+          }
+        }
+
+        // Courbe
+        ctx.beginPath();
+        for (let i = 0; i < visibleData.length; i++) {
+          const x = margin + i * stepX;
+
+          let yVal = visibleData[i];
+          if (visiblePreviousData.length === visibleData.length) {
+            const prevYVal = visiblePreviousData[i];
+            yVal = interpolate(prevYVal, visibleData[i], animationProgress);
+          }
+
+          const y = height - margin - (yVal - yStart) * dynamicScale;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = curveColor;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Tracé du chemin de la courbe pour le dégradé
+        ctx.beginPath();
+        for (let i = 0; i < visibleData.length; i++) {
+          const x = margin + i * stepX;
+          const yVal = visibleData[i];
+          const y = height - margin - (yVal - yStart) * dynamicScale;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+
+        // Fermeture du chemin vers le bas pour remplir
+        const lastX = margin + (visibleData.length - 1) * stepX;
+        const lastY =
+          height -
+          margin -
+          (visibleData[visibleData.length - 1] - yStart) * dynamicScale;
+        ctx.lineTo(lastX, lastY + 70);
+        ctx.lineTo(margin, lastY + 70);
+        ctx.closePath();
+
+        const gradient = ctx.createLinearGradient(0, lastY, 0, lastY + 70);
+        const gradientStart = isRising
+          ? "rgba(0, 200, 83, 0.2)"
+          : "rgba(213, 0, 0, 0.2)";
+        const gradientEnd = isRising
+          ? "rgba(0, 200, 83, 0)"
+          : "rgba(213, 0, 0, 0)";
+        gradient.addColorStop(0, gradientStart);
+        gradient.addColorStop(1, gradientEnd);
+
+        ctx.fillStyle = gradient;
+        ctx.fill();
+
+        // Ligne blanche au niveau du dernier prix
+        const currentY = height - margin - (lastValue - yStart) * dynamicScale;
+        ctx.beginPath();
+        ctx.moveTo(margin, currentY);
+        ctx.lineTo(width - margin, currentY);
+        ctx.strokeStyle = "#ffffff";
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const bubblePaddingX = 3;
+        const bubblePaddingY = 4;
+        const text = lastValue.toFixed(4);
+        ctx.font = "11px sans-serif";
+
+        // Mesurer la largeur du texte
+        const textWidth = ctx.measureText(text).width;
+
+        // Coordonnées pour positionner la bulle à droite
+        const bubbleX = width - 39 - bubblePaddingX * 2;
+        const bubbleY = currentY - 9;
+
+        // Taille de la bulle
+        const bubbleWidth = textWidth + bubblePaddingX * 2;
+        const bubbleHeight = 16;
+
+        // Dessiner la bulle (fond arrondi)
+        ctx.fillStyle = "#fff"; // couleur de fond de la bulle
+        ctx.beginPath();
+        ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 6);
+        ctx.fill();
+
+        // Dessiner le texte dans la bulle
+        ctx.fillStyle = "#000";
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(
+          text,
+          bubbleX + bubblePaddingX,
+          bubbleY + bubbleHeight / 2
+        );
+
+        //Ligne + bulle du prix d'action (si chargé)
+        if (prixActionIvoire !== null) {
+          const yAction =
+            height - margin - (prixActionIvoire - yStart) * dynamicScale;
+
+          // Ligne horizontale
+          ctx.beginPath();
+          ctx.moveTo(margin, yAction);
+          ctx.lineTo(width - margin, yAction);
+          ctx.strokeStyle = "#000";
+          ctx.setLineDash([3, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Bulle info
+          const text = `Share price: ${prixActionIvoire.toFixed(4)}`;
+          const textWidth = ctx.measureText(text).width;
+          const bubbleX = width - margin - textWidth - 20;
+
+          ctx.fillStyle = "#FFA500";
+          ctx.beginPath();
+          ctx.roundRect(bubbleX, yAction - 10, textWidth + 10, 16, 6);
+          ctx.fill();
+
+          ctx.fillStyle = "#000";
+          ctx.fillText(text, bubbleX + 5, yAction);
+        }
+
+        // Axe Y
+        ctx.strokeStyle = "#44444400";
+        ctx.lineWidth = 1;
+        ctx.font = "10px sans-serif";
+        ctx.fillStyle = "#ccc";
+        ctx.textAlign = "right";
+
+        for (let yValue = firstGridY; yValue <= lastGridY; yValue++) {
+          const y = height - margin - (yValue - yStart) * dynamicScale;
+          ctx.beginPath();
+          ctx.moveTo(margin, y);
+          ctx.lineTo(width - margin, y);
+          ctx.stroke();
+          ctx.fillText(yValue.toFixed(0), margin - 10, y + 4);
+        }
+
+        drawSegments(); // pour dessiner le segment si les points sont définis
+        drawMiniChart();
+
+        // Tooltip amélioré (ligne + prix + date)
+        if (mouseX !== null && visibleData.length > 0) {
+          // Sauvegarde des styles originaux
+          const originalFont = ctx.font;
+          const originalTextAlign = ctx.textAlign;
+          const originalFillStyle = ctx.fillStyle;
+
+          const index = Math.round((mouseX - margin) / stepX);
+          if (index >= 0 && index < visibleData.length) {
+            const x = margin + index * stepX;
+            const y =
+              height - margin - (visibleData[index] - yStart) * dynamicScale;
+
+            // Ligne verticale de tooltip
+            ctx.beginPath();
+            ctx.moveTo(x, margin);
+            ctx.lineTo(x, height - margin);
+            ctx.strokeStyle = "#00000030";
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Cercle sur le point
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = curveColor;
+            ctx.fill();
+
+            if (mouseY !== null) {
+              const yValue = yStart + (height - margin - mouseY) / dynamicScale;
+
+              // 🔹 Ligne horizontale de tooltip
+              ctx.beginPath();
+              ctx.moveTo(margin, mouseY);
+              ctx.lineTo(width - margin, mouseY);
+              ctx.strokeStyle = "#00000030";
+              ctx.setLineDash([4, 4]);
+              ctx.stroke();
+              ctx.setLineDash([]);
+
+              // 🔹 Bulle à droite
+              const text = yValue.toFixed(4);
+              const textWidth = ctx.measureText(text).width;
+              const bubblePaddingX = 4;
+              const bubblePaddingY = 4;
+              const bubbleWidth = textWidth + bubblePaddingX * 2;
+              const bubbleHeight = 18;
+
+              const bubbleX = width - margin + 10;
+              const bubbleY = mouseY - bubbleHeight / 2;
+
+              ctx.fillStyle = "#fff";
+              ctx.beginPath();
+              ctx.roundRect(bubbleX, bubbleY, bubbleWidth, bubbleHeight, 5);
+              ctx.fill();
+
+              ctx.fillStyle = "#000";
+              ctx.font = "12px sans-serif";
+              ctx.textAlign = "left";
+              ctx.textBaseline = "middle";
+              ctx.fillText(
+                text,
+                bubbleX + bubblePaddingX,
+                bubbleY + bubbleHeight / 2
+              );
+            }
+
+            // Tooltip en haut (prix)
+            tooltip.style.display = "block";
+            tooltip.style.left = `${x + canvas.offsetLeft - 30}px`;
+            tooltip.style.top = `${y + canvas.offsetTop - 40}px`;
+            tooltip.textContent = `${visibleData[index].toFixed(4)}`;
+            tooltip.style.color = isRising ? "#00c853" : "#d50000";
+
+            // Date en bas
+            const rawLabel = timeLabels[startIndex + index] || "";
+            const date = new Date(rawLabel);
+
+            ctx.fillStyle = "#000";
+            ctx.fillRect(x - 55, height - margin + 10, 110, 20);
+
+            // Style spécifique pour la date seulement
+            ctx.font = "12px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillStyle = "#fff";
+
+            const formattedLabel = date.toLocaleString("fr-FR", {
+              day: "2-digit",
+              month: "short",
+              year: "2-digit",
+              hour: "2-digit",
+              minute: "2-digit",
+              hour12: false,
+            });
+
+            ctx.fillText(formattedLabel, x, height - margin + 25);
+
+            // RESTAURATION des styles originaux
+            ctx.font = originalFont;
+            ctx.textAlign = originalTextAlign;
+            ctx.fillStyle = originalFillStyle;
+          }
+        } else {
+          tooltip.style.display = "none";
+        }
+      }
+
+      async function chargerHistorique(force = false) {
+        try {
+          const res = await fetch("/valeur-actuelle");
+          const serverData = await res.json();
+
+          const nouvelleDerniereValeur =
+            serverData.historique[serverData.historique.length - 1];
+
+          if (force || nouvelleDerniereValeur !== lastValue) {
+            // Sauvegarde des anciennes données pour l'animation
+            previousData = [...data];
+
+            // Mise à jour des données
+            data = serverData.historique;
+            timeLabels = serverData.heures;
+            lastValue = nouvelleDerniereValeur;
+
+            // Mettre à jour les valeurs des points dans les segments
+            segments.forEach((segment) => {
+              if (segment.pointA.index < data.length) {
+                segment.pointA.value = data[segment.pointA.index];
+              }
+              if (segment.pointB.index < data.length) {
+                segment.pointB.value = data[segment.pointB.index];
+              }
+            });
+
+            if (autoScroll) {
+              startIndex = Math.max(
+                0,
+                data.length - Math.floor(data.length / zoomLevel)
+              );
+            }
+
+            animateCurve();
+          }
+        } catch (err) {
+          console.error("Erreur de récupération historique :", err);
+        }
+      }
+
+      async function surveillerChangement() {
+        polling = true;
+        const timeout = Date.now() + 7000;
+        while (Date.now() < timeout) {
+          await chargerHistorique();
+
+          await chargerPrixAction(); // Rafraîchit aussi le prix action
+          break;
+        }
+        polling = false;
+      }
+
+      setInterval(() => {
+        const now = new Date();
+        if (now.getSeconds() === 59 && !polling) {
+          surveillerChangement();
+        }
+      }, 1000);
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          chargerHistorique(true);
+        }
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        drawChart(mouseX, mouseY);
+      });
+
+      canvas.addEventListener("mouseleave", () => drawChart());
+
+      // 🎯 Scroll horizontal avec souris
+      canvas.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        dragStartX = e.clientX;
+      });
+
+      canvas.addEventListener("mousemove", (e) => {
+        if (isDragging) {
+          const dx = e.clientX - dragStartX;
+          if (Math.abs(dx) > 10) {
+            const shift = Math.sign(dx) * -1;
+            startIndex = Math.max(
+              0,
+              Math.min(data.length - maxPoints, startIndex + shift)
+            );
+            dragStartX = e.clientX;
+            drawChart();
+          }
+        }
+      });
+
+      canvas.addEventListener("mouseup", () => {
+        isDragging = false;
+      });
+
+      canvas.addEventListener("mouseleave", () => {
+        isDragging = false;
+      });
+
+      // 🎯 Flèches clavier pour naviguer
+      document.addEventListener("keydown", (e) => {
+        if (
+          ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)
+        ) {
+          autoScroll = false; // Désactive le scroll automatique
+        }
+
+        if (e.key === "ArrowLeft") {
+          startIndex = Math.max(0, startIndex - 1);
+          drawChart();
+        } else if (e.key === "ArrowRight") {
+          startIndex = Math.min(data.length - maxPoints, startIndex + 1);
+          drawChart();
+        } else if (e.key === "ArrowUp") {
+          animateYOffset(yOffset - 1);
+        } else if (e.key === "ArrowDown") {
+          animateYOffset(yOffset + 1);
+        }
+      });
+
+      function updateData(newValue) {
+        data.push(newValue);
+        previousData.push(data[data.length - 2] || newValue);
+
+        // Ajuster startIndex SEULEMENT si on est au bout
+        if (autoScroll) {
+          const newMaxPoints = Math.floor(data.length / zoomLevel);
+          startIndex = Math.max(0, data.length - newMaxPoints);
+        }
+
+        drawChart();
+      }
+
+      function checkAutoScrollActivation() {
+        const newMaxPoints = Math.floor(data.length / zoomLevel);
+        const isAtEnd = startIndex >= data.length - newMaxPoints - 1;
+        if (isAtEnd) autoScroll = true;
+      }
+
+      // Le chargement initial:
+      async function init() {
+        await chargerHistorique(true);
+        await chargerPrixAction();
+        drawChart();
+      }
+      init();
+
+      let lastZoomTime = 0;
+
+      canvas.addEventListener("wheel", (e) => {
+        e.preventDefault();
+
+        const now = Date.now();
+        if (now - lastZoomTime < 30) return; // attends au moins 30 ms
+        lastZoomTime = now;
+
+        if (e.shiftKey) {
+          const scrollAmount = e.deltaY > 0 ? 10 : -10;
+          scrollTo(startIndex + scrollAmount);
+          return;
+        }
+
+        if (e.altKey) {
+          const newOffset = yOffset + (e.deltaY > 0 ? 1 : -1);
+          animateYOffset(newOffset);
+          return;
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const maxPoints = Math.floor(data.length / zoomLevel);
+        const indexInView = Math.floor(
+          (mouseX - margin) / ((width - margin * 2) / (maxPoints - 1))
+        );
+        const centerIndex = startIndex + indexInView;
+
+        const direction = e.deltaY < 0 ? "in" : "out";
+        applyZoom(direction, centerIndex);
+
+        autoScroll = false;
+      });
+
+      function applyZoom(direction, centerIndex = null) {
+        const targetZoom =
+          direction === "in"
+            ? Math.min(zoomLevel * 1.1, maxZoom)
+            : Math.max(zoomLevel / 1.1, minZoom);
+
+        const startZoom = zoomLevel;
+        const duration = 50; // ms
+        const startTime = performance.now();
+
+        function animateZoom(time) {
+          const progress = Math.min((time - startTime) / duration, 1);
+          zoomLevel =
+            startZoom + (targetZoom - startZoom) * easeInOutQuad(progress);
+
+          const maxVisible = Math.floor(data.length / zoomLevel);
+          const center =
+            centerIndex !== null
+              ? centerIndex
+              : startIndex + Math.floor(data.length / startZoom / 2);
+
+          startIndex = Math.max(
+            0,
+            Math.min(
+              data.length - maxVisible,
+              center - Math.floor(maxVisible / 2)
+            )
+          );
+
+          document.getElementById(
+            "zoomLevelDisplay"
+          ).textContent = `Zoom: ${zoomLevel.toFixed(1)}x`;
+          drawChart();
+
+          if (progress < 1) {
+            requestAnimationFrame(animateZoom);
+          }
+        }
+
+        requestAnimationFrame(animateZoom);
+      }
+
+      function easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      }
+
+      function zoomIn() {
+        applyZoom("in");
+      }
+
+      function zoomOut() {
+        applyZoom("out");
+      }
+
+      function resetZoom() {
+        zoomLevel = 1;
+        startIndex = 0;
+        yZoomLevel = 1;
+        yCenterValue = null;
+        animateYOffset(0);
+        document.getElementById("zoomLevelDisplay").textContent = `Zoom: 1.0x`;
+        drawChart();
+      }
+
+      document.getElementById("leftButton").addEventListener("click", () => {
+        const scrollAmount = Math.floor(data.length / zoomLevel / 10);
+        scrollTo(startIndex - scrollAmount);
+      });
+
+      document.getElementById("rightButton").addEventListener("click", () => {
+        const scrollAmount = Math.floor(data.length / zoomLevel / 10);
+        scrollTo(startIndex + scrollAmount);
+      });
+
+      let scrollStartIndex = startIndex;
+      let scrollTargetIndex = startIndex;
+      let scrollStartTime = 0;
+      let scrolling = false;
+
+      function scrollTo(targetIndex) {
+        scrollStartIndex = startIndex;
+        scrollTargetIndex = Math.max(
+          0,
+          Math.min(
+            data.length - Math.floor(data.length / zoomLevel),
+            targetIndex
+          )
+        );
+        scrollStartTime = performance.now();
+        if (!scrolling) {
+          requestAnimationFrame(animateScroll);
+          scrolling = true;
+        }
+      }
+
+      function animateScroll(time) {
+        const duration = 300; // durée de l'animation en ms
+        const elapsed = time - scrollStartTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const easedProgress = easeInOutQuad(progress);
+
+        startIndex = Math.round(
+          scrollStartIndex +
+            (scrollTargetIndex - scrollStartIndex) * easedProgress
+        );
+        drawChart();
+
+        if (progress < 1) {
+          requestAnimationFrame(animateScroll);
+        } else {
+          scrolling = false;
+        }
+      }
+
+      function easeInOutQuad(t) {
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      }
+
+      function applyVerticalZoom(direction) {
+        const targetYZoom =
+          direction === "in"
+            ? Math.min(yZoomLevel * 1.2, maxYZoom)
+            : Math.max(yZoomLevel / 1.2, minYZoom);
+
+        const startZoom = yZoomLevel;
+        const duration = 100;
+        const startTime = performance.now();
+
+        // Prend la valeur au centre de la vue comme centre Y
+        const visibleData = data.slice(startIndex, startIndex + maxPoints);
+        yCenterValue =
+          visibleData.length > 0
+            ? visibleData[Math.floor(visibleData.length / 2)]
+            : null;
+
+        function animateYZoom(time) {
+          const progress = Math.min((time - startTime) / duration, 1);
+          yZoomLevel =
+            startZoom + (targetYZoom - startZoom) * easeInOutQuad(progress);
+          drawChart();
+          if (progress < 1) {
+            requestAnimationFrame(animateYZoom);
+          }
+        }
+
+        requestAnimationFrame(animateYZoom);
+      }
+
+      function animateYOffset(to) {
+        yOffsetStart = yOffset;
+        targetYOffset = to;
+        yOffsetStartTime = performance.now();
+        if (!yOffsetAnimating) {
+          yOffsetAnimating = true;
+          requestAnimationFrame(stepYOffsetAnimation);
+        }
+      }
+
+      function stepYOffsetAnimation(time) {
+        const duration = 500;
+        const elapsed = time - yOffsetStartTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = easeInOutQuad(progress);
+
+        yOffset = yOffsetStart + (targetYOffset - yOffsetStart) * eased;
+        drawChart();
+
+        if (progress < 1) {
+          requestAnimationFrame(stepYOffsetAnimation);
+        } else {
+          yOffset = targetYOffset;
+          yOffsetAnimating = false;
+        }
+      }
+
+      function animateCurve() {
+        previousData = [...data];
+        animationStartTime = performance.now();
+        animationProgress = 0;
+        animatingCurve = true;
+        requestAnimationFrame(stepCurveAnimation);
+      }
+
+      function stepCurveAnimation(timestamp) {
+        const duration = 200; // 300ms
+        const elapsed = timestamp - animationStartTime;
+        const progress = Math.min(elapsed / duration, 1);
+        animationProgress = easeInOutQuad(progress);
+
+        drawChart(); // redessine la courbe avec animationProgress
+
+        if (progress < 1) {
+          requestAnimationFrame(stepCurveAnimation);
+        } else {
+          animationProgress = 1;
+          animatingCurve = false;
+        }
+      }
+
+      canvas.addEventListener("touchmove", (e) => {
+        e.preventDefault();
+
+        if (e.touches.length === 1 && isTouchDragging) {
+          const dx = e.touches[0].clientX - touchStartX;
+          const dy = e.touches[0].clientY - touchStartY;
+
+          const horizontalShift = Math.round(dx / 10); // plus petit = plus sensible
+          const verticalShift = dy / 40; // glissement vertical = yOffset
+
+          startIndex = Math.max(
+            0,
+            Math.min(data.length - maxPoints, touchStartIndex - horizontalShift)
+          );
+
+          yOffset = touchStartYOffset + verticalShift;
+
+          drawChart();
+        } else if (e.touches.length === 2) {
+          const newDistance = getDistance(e.touches[0], e.touches[1]);
+          if (lastTouchDistance !== null) {
+            const delta = newDistance - lastTouchDistance;
+
+            if (Math.abs(delta) > 5) {
+              const centerIndex = startIndex + Math.floor(maxPoints / 2);
+              applyZoom(delta < 0 ? "out" : "in", centerIndex);
+            }
+          }
+          lastTouchDistance = newDistance;
+        }
+      });
+
+      canvas.addEventListener("touchend", () => {
+        isTouchDragging = false;
+        lastTouchDistance = null;
+      });
+
+      function getDistance(touch1, touch2) {
+        const dx = touch2.clientX - touch1.clientX;
+        const dy = touch2.clientY - touch1.clientY;
+        return Math.sqrt(dx * dx + dy * dy);
+      }
+
+      canvas.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 1) {
+          isTouchDragging = true;
+          touchStartX = e.touches[0].clientX;
+          touchStartY = e.touches[0].clientY;
+          touchStartIndex = startIndex;
+          touchStartYOffset = yOffset;
+        } else if (e.touches.length === 2) {
+          lastTouchDistance = getDistance(e.touches[0], e.touches[1]);
+        }
+      });
+    </script>
+
+    <script src="drawSegment.js"></script>
+    <script src="miniChart.js"></script>
+  </body>
+</html>
